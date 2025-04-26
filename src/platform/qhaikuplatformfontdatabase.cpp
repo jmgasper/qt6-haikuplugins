@@ -133,7 +133,7 @@ void QHaikuPlatformFontDatabase::populateFontDatabase()
 QStringList	QHaikuPlatformFontDatabase::fallbacksForFamily(const QString &family,
 															QFont::Style style,
 															QFont::StyleHint styleHint,
-															QChar::Script script) const
+															QFontDatabasePrivate::ExtendedScript script) const
 {
 	QStringList result;
 	if (styleHint == QFont::Monospace || styleHint	== QFont::Courier) {

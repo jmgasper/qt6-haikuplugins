@@ -64,7 +64,7 @@ public:
 	QStringList fallbacksForFamily(const QString &family,
 									QFont::Style style,
 									QFont::StyleHint styleHint,
-									QChar::Script script) const override;
+									QFontDatabasePrivate::ExtendedScript script) const override;
 	QFontEngine *fontEngine(const QFontDef &fontDef, void *handle) override;
 	void releaseHandle(void *handle) override;
 private:

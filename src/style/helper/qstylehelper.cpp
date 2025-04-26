@@ -287,7 +287,7 @@ void drawDial(const QStyleOptionSlider *option, QPainter *painter)
                        qMax(180, buttonColor.value()));
 
     // Cache dial background
-    BEGIN_STYLE_PIXMAPCACHE(QString::fromLatin1("qdial"));
+    QCachedPainter p(painter, QLatin1StringView("qdial"), option);
     p->setRenderHint(QPainter::Antialiasing);
 
     const qreal d_ = r / 6;
@@ -344,7 +344,7 @@ void drawDial(const QStyleOptionSlider *option, QPainter *painter)
         p->drawEllipse(br.adjusted(-1, -1, 1, 1));
     }
 
-    END_STYLE_PIXMAPCACHE
+    p.finish();
 
     QPointF dp = calcRadialPos(option, qreal(0.70));
     buttonColor = buttonColor.lighter(104);
