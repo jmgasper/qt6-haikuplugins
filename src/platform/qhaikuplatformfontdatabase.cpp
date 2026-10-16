@@ -43,6 +43,7 @@
 
 #include "qhaikuintegration.h"
 #include "qhaikuplatformfontdatabase.h"
+#include "qhaikuscreen.h"
 
 #include <Path.h>
 #include <PathFinder.h>
@@ -63,6 +64,13 @@ QFontEngineHaikuFT *QFontEngineHaikuFT::create(const QFontDef &fontDef, FaceId f
 	bool subpixel = false;
 	get_subpixel_antialiasing(&subpixel);
 
+	// On a desktop drawn at a higher density the system anti-aliases in grey
+	// and hints vertically only, keeping the advances: the same here, so that
+	// text in Qt windows looks like the rest.
+	bool scaled = QHaikuScreen::deviceScale() != 1.0;
+	if (scaled)
+		subpixel = false;
+
 	if (!subpixel) {
 		format = QFontEngineFT::Format_A8;
 		engine->subpixelType = QFontEngine::Subpixel_None;
@@ -81,6 +89,8 @@ QFontEngineHaikuFT *QFontEngineHaikuFT::create(const QFontDef &fontDef, FaceId f
 
 	if (hinting == 0)
 		engine->setDefaultHintStyle(QFontEngineHaikuFT::HintNone);
+	else if (scaled)
+		engine->setDefaultHintStyle(QFontEngineHaikuFT::HintLight);
 	else if (hinting == 1)
 		engine->setDefaultHintStyle(QFontEngineHaikuFT::HintMedium);
 	else if (hinting == 2 && fontDef.families.contains("Mono"))

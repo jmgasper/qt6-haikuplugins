@@ -50,6 +50,8 @@
 
 #include <qdebug.h>
 
+#include <dlfcn.h>
+
 QT_BEGIN_NAMESPACE
 
 QHaikuScreen::QHaikuScreen()
@@ -113,7 +115,7 @@ QPlatformScreen::SubpixelAntialiasingType QHaikuScreen::subpixelAntialiasingType
 {
     QPlatformScreen::SubpixelAntialiasingType type = QPlatformScreen::subpixelAntialiasingTypeHint();
 
-    if (type == QPlatformScreen::Subpixel_None) {
+    if (type == QPlatformScreen::Subpixel_None && deviceScale() == 1.0) {
 		bool subpixel = false;
 		get_subpixel_antialiasing(&subpixel);
 
@@ -145,6 +147,32 @@ QSizeF QHaikuScreen::physicalSize() const
 QDpi QHaikuScreen::logicalDpi() const
 {
     return QDpi(72, 72);
+}
+
+
+// On a desktop drawn at a higher density for a high density monitor
+// (air/OS), BScreen::DeviceScale() says how many frame buffer pixels make up
+// a coordinate unit. Windows keep their coordinates; their backing stores
+// have that many times as many pixels and are drawn one to one, which keeps
+// text and lines sharp instead of having the window system enlarge them.
+// Looked up at run time: elsewhere the ratio is 1.
+qreal QHaikuScreen::deviceScale()
+{
+    typedef float (*DeviceScaleFunction)(BScreen *screen);
+    static DeviceScaleFunction deviceScaleFunction
+        = (DeviceScaleFunction)dlsym(RTLD_DEFAULT, "_ZN7BScreen11DeviceScaleEv");
+    if (deviceScaleFunction == NULL)
+        return 1.0;
+
+    BScreen screen(B_MAIN_SCREEN_ID);
+    float scale = deviceScaleFunction(&screen);
+    return scale >= 1.0f && scale <= 8.0f ? scale : 1.0;
+}
+
+
+qreal QHaikuScreen::devicePixelRatio() const
+{
+    return deviceScale();
 }
 
 Qt::ScreenOrientation QHaikuScreen::nativeOrientation() const

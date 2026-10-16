@@ -79,6 +79,7 @@ public:
     QPaintDevice *paintDevice() override;
     void flush(QWindow *window, const QRegion &region, const QPoint &offset) override;
     void resize(const QSize &size, const QRegion &staticContents) override;
+    void beginPaint(const QRegion &region) override;
     bool scroll(const QRegion &area, int dx, int dy) override;
 	QImage toImage() const override { return m_image; }
 
@@ -87,8 +88,11 @@ public:
 private:
     void clearHash();
 
+    void ensureBitmap();
     QImage m_image;
     BBitmap *m_bitmap;
+    QSize m_requestedSize;
+    qreal m_scale;
     
     QHash<WId, QRect> m_windowAreaHash;
 };

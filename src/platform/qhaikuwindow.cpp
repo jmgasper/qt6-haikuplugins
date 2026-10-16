@@ -39,6 +39,7 @@
 ****************************************************************************/
 
 #include "qhaikuwindow.h"
+#include "qhaikuscreen.h"
 #include "qhaikukeymap.h"
 #include "qhaikusettings.h"
 
@@ -276,6 +277,13 @@ void QtHaikuWindow::FrameMoved(BPoint point)
 }
 
 
+void QtHaikuWindow::ScreenChanged(BRect frame, color_space mode)
+{
+	BWindow::ScreenChanged(frame, mode);
+	Q_EMIT screenChanged();
+}
+
+
 void QtHaikuWindow::WindowActivated(bool active)
 {
 	Q_EMIT windowActivated(active);
@@ -327,6 +335,7 @@ QHaikuWindow::QHaikuWindow(QWindow *wnd)
 
 	connect(m_window, SIGNAL(quitRequested()), SLOT(platformWindowQuitRequested()));
     connect(m_window, SIGNAL(windowMoved(QPoint)), SLOT(platformWindowMoved(QPoint)));
+    connect(m_window, SIGNAL(screenChanged()), SLOT(platformScreenChanged()));
 	connect(m_window, SIGNAL(windowResized(QSize)), SLOT(platformWindowResized(QSize)));
     connect(m_window, SIGNAL(windowActivated(bool)), SLOT(platformWindowActivated(bool)));
     connect(m_window, SIGNAL(workspaceActivated(int, bool)), SLOT(platformWorkspaceActivated(int, bool)));
@@ -956,6 +965,29 @@ BRegion QHaikuWindow::getClippingRegion()
 void QHaikuWindow::platformWindowQuitRequested()
 {
     QWindowSystemInterface::handleCloseEvent(window());
+}
+
+
+// Frame buffer pixels per coordinate unit, see QHaikuScreen::deviceScale().
+qreal QHaikuWindow::devicePixelRatio() const
+{
+	return QHaikuScreen::deviceScale();
+}
+
+
+// The screen's size, or the density it is drawn at, changed: Qt asks
+// the screen again and repaints the window at the new device pixel ratio.
+void QHaikuWindow::platformScreenChanged()
+{
+	QPlatformScreen *platformScreen = screen();
+	if (platformScreen != NULL && platformScreen->screen() != NULL) {
+		QWindowSystemInterface::handleScreenGeometryChange(
+			platformScreen->screen(), platformScreen->geometry(),
+			platformScreen->availableGeometry());
+	}
+	QWindowSystemInterface::handleWindowDevicePixelRatioChanged(window());
+	QWindowSystemInterface::handleExposeEvent(window(),
+		QRect(QPoint(), window()->size()));
 }
 
 

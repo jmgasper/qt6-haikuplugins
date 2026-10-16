@@ -83,6 +83,7 @@ public:
 
 	void FrameResized(float width, float height) override;
 	void FrameMoved(BPoint point) override;
+	void ScreenChanged(BRect frame, color_space mode) override;
 	void MessageReceived(BMessage* msg) override;
 	virtual void DispatchMessage(BMessage *, BHandler *) override;
 	virtual void WindowActivated(bool active) override;
@@ -98,6 +99,7 @@ public:
 	QHaikuWindow *fQWindow;
 Q_SIGNALS:
     void windowMoved(const QPoint &pos);
+    void screenChanged();
     void windowResized(const QSize &size);
     void windowActivated(bool activated);
     void workspaceActivated(int workspace, bool activated);
@@ -126,6 +128,7 @@ public:
 	virtual void destroy();
 
 	void setGeometry(const QRect &rect) override;
+	qreal devicePixelRatio() const override;
 	void setWindowTitle(const QString &title) override;
 	void setWindowState(Qt::WindowStates state) override;
 	void setWindowFlags(Qt::WindowFlags flags) override;
@@ -194,6 +197,7 @@ private:
 private Q_SLOTS:
 	void platformWindowQuitRequested();
 	void platformWindowMoved(const QPoint &pos);
+	void platformScreenChanged();
 	void platformWindowResized(const QSize &size);
 	void platformWindowActivated(bool activated);
 	void platformWorkspaceActivated(int workspace, bool activated);
