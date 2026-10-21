@@ -61,6 +61,8 @@
 #include <OS.h>
 #include <MessageRunner.h>
 
+Q_DECLARE_METATYPE(BMessage)
+
 QT_BEGIN_NAMESPACE
 
 class QSystemTrayIconLooper : public QObject, public BLooper
@@ -71,7 +73,7 @@ public:
 	virtual void MessageReceived(BMessage* theMessage) override;
 	thread_id Run(void) override;
 signals:
-	void sendHaikuMessage(BMessage *);
+	void sendHaikuMessage(const BMessage &);
 private:
 	uint32 lastButtons;
 };
@@ -108,7 +110,7 @@ public:
 	QString currentToolTip;
 
 public slots:
-    void	haikuEvents(BMessage *m);
+    void	haikuEvents(const BMessage &m);
 
 private:
 	BMessenger getShelfMessenger(void);
@@ -116,6 +118,7 @@ private:
 	int32 	deskBarLoadIcon(team_id tid);
 	int32 	deskBarLoadIcon(void);
 	void 	installIcon(void);
+	status_t replicantStatus(void);
 
 	int32	replicantId;
 	int32	liveFactor;
@@ -125,6 +128,7 @@ private:
 	int32	trayMenuClickCounter;
 
 	BMessageRunner *pulse;
+	BMessageRunner *mousePulse;
 };
 
 QT_END_NAMESPACE

@@ -71,6 +71,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -98,16 +99,14 @@ QSystemTrayIconLooper::MessageReceived(BMessage* theMessage)
 	if( theMessage->what == 'TRAY' ||
 		theMessage->what == 'PULS' ||
 		theMessage->what == 'LIVE') {
-		BMessage *mes = new BMessage(*theMessage);
-		emit sendHaikuMessage(mes);
+		emit sendHaikuMessage(*theMessage);
 	}
 	if (theMessage->what == 'MOUS') {
 		BPoint point;
 		uint32 buttons;
 		get_mouse(&point, &buttons);
 		if (lastButtons != buttons && buttons == 0) {
-			BMessage *mes = new BMessage(*theMessage);
-			emit sendHaikuMessage(mes);
+			emit sendHaikuMessage(*theMessage);
 		}
 		lastButtons = buttons;
 	}
@@ -117,9 +116,12 @@ QSystemTrayIconLooper::MessageReceived(BMessage* theMessage)
 QHaikuSystemTrayIcon::QHaikuSystemTrayIcon()
 	: looper(NULL)
 	, replicantId(-1)
+	, liveFactor(0)
+	, ignoreNextMouseRelease(false)
 	, qystrayExist(false)
 	, trayMenuClickCounter(0)
 	, pulse(NULL)
+	, mousePulse(NULL)
 {
 	qystrayExist = findTrayExecutable();
 }
@@ -127,14 +129,19 @@ QHaikuSystemTrayIcon::QHaikuSystemTrayIcon()
 void
 QHaikuSystemTrayIcon::init()
 {
+	if (looper != NULL)
+		return;
+	qRegisterMetaType<BMessage>();
 	looper = new QSystemTrayIconLooper();
 	looper->Run();
 
-	connect((QSystemTrayIconLooper*)looper, SIGNAL(sendHaikuMessage(BMessage *)),
-		this, SLOT(haikuEvents(BMessage *)), Qt::QueuedConnection);
+	connect(looper, &QSystemTrayIconLooper::sendHaikuMessage,
+		this, &QHaikuSystemTrayIcon::haikuEvents, Qt::QueuedConnection);
 
-	pulse = new BMessageRunner(BMessenger(looper), new BMessage('PULS'), 1000000);
-	pulse = new BMessageRunner(BMessenger(looper), new BMessage('MOUS'), 50000);
+	BMessage pulseMessage('PULS');
+	BMessage mouseMessage('MOUS');
+	pulse = new BMessageRunner(BMessenger(looper), &pulseMessage, 1000000);
+	mousePulse = new BMessageRunner(BMessenger(looper), &mouseMessage, 50000);
 }
 
 void
@@ -144,20 +151,25 @@ QHaikuSystemTrayIcon::cleanup()
 		delete pulse;
 		pulse = NULL;
 	}
+	if (mousePulse != NULL) {
+		delete mousePulse;
+		mousePulse = NULL;
+	}
 
 	if (looper != NULL) {
 		if (looper->Lock()) {
-			disconnect((QSystemTrayIconLooper*)looper, SIGNAL(sendHaikuMessage(BMessage *)), 0, 0);
+			disconnect(looper, nullptr, this, nullptr);
 			looper->Quit();
 			looper = NULL;
 		}
 	}
 
 	BDeskbar deskbar;
-	if (replicantId > 0) {
+	if (replicantId >= 0 && replicantStatus() == B_OK) {
 		deskbar.RemoveItem(replicantId);
-		replicantId = -1;
 	}
+	replicantId = -1;
+	liveFactor = 0;
 	trayMenuClickCounter = 0;
 }
 
@@ -188,11 +200,11 @@ QHaikuSystemTrayIcon::updateIcon(const QIcon &qicon)
 
 		BMessage bits(B_ARCHIVED_OBJECT);
 		icon->Archive(&bits);
-		BMessage *message = new BMessage('BITS');
-		message->AddMessage("icon", &bits);
+		BMessage message('BITS');
+		message.AddMessage("icon", &bits);
 		bits.MakeEmpty();
 
-		sendMessageToReplicant(message);
+		sendMessageToReplicant(&message);
 
 		delete icon;
 	}
@@ -212,9 +224,9 @@ QHaikuSystemTrayIcon::updateToolTip(const QString &tip)
 		tipStr.SetTo(currentToolTip.toUtf8().constData(), currentToolTip.toUtf8().count());
     }
 
-	BMessage *message = new BMessage('TTIP');
-	message->AddString("tooltip",tipStr.String());
-	sendMessageToReplicant(message);
+	BMessage message('TTIP');
+	message.AddString("tooltip",tipStr.String());
+	sendMessageToReplicant(&message);
 }
 
 QPlatformMenu *
@@ -266,42 +278,50 @@ QHaikuSystemTrayIcon::showMessage(const QString &title, const QString &msg,
 }
 
 void
-QHaikuSystemTrayIcon::haikuEvents(BMessage *message)
+QHaikuSystemTrayIcon::haikuEvents(const BMessage &message)
 {
-	if(message->what == 'PULS') {
+	// A queued heartbeat can arrive after hide()/cleanup().
+	if (looper == NULL)
+		return;
+	if(message.what == 'PULS') {
 		liveFactor--;
-		if(liveFactor < -5) {		//Reinstallation time
+		if(liveFactor < -5) {
 			liveFactor = 0;
-			replicantId = -1;
+			// A missing heartbeat does not mean the icon has gone away.
+			// Reconnect the existing replicant; only replace an absent one.
+			status_t status = replicantStatus();
+			if (status == B_BAD_INDEX)
+				replicantId = -1;
+			else if (status != B_OK)
+				return; // Deskbar may be busy. Retry without creating a duplicate.
 			installIcon();
-			liveFactor = 0;
 			updateIcon(currentIcon);
 			updateToolTip(currentToolTip);
 		}
 	}
-	if(message->what == 'MOUS' && trayMenuClickCounter > 0) {
+	if(message.what == 'MOUS' && trayMenuClickCounter > 0) {
 		if (trayMenuClickCounter == 1) {
 			while (QApplication::activePopupWidget())
 				QApplication::activePopupWidget()->close();
 		}
 		trayMenuClickCounter--;
 	}
-	if(message->what == 'LIVE') {
+	if(message.what == 'LIVE') {
 		liveFactor++;
 		BRect rect;
-		if(message->FindRect("rect", &rect)==B_OK)
+		if(message.FindRect("rect", &rect)==B_OK)
 			shelfRect.setRect(rect.left, rect.top, rect.Width(), rect.Height());
 	}
-	if(message->what == 'TRAY') {
+	if(message.what == 'TRAY') {
 		int32 event = 0;
 		BPoint point(0, 0);
 		int32 buttons = 0,
 			  clicks = 0;
 
-		message->FindInt32("event", &event);
-		message->FindPoint("point", &point);
-		message->FindInt32("buttons", &buttons);
-		message->FindInt32("clicks", &clicks);
+		message.FindInt32("event", &event);
+		message.FindPoint("point", &point);
+		message.FindInt32("buttons", &buttons);
+		message.FindInt32("clicks", &clicks);
 
 		switch(event) {
 			case TRAY_MOUSEUP:
@@ -353,7 +373,7 @@ QHaikuSystemTrayIcon::findTrayExecutable(void)
 status_t 
 QHaikuSystemTrayIcon::sendMessageToReplicant(BMessage *message)
 {
-	if(replicantId <= 0)
+	if(replicantId < 0)
 		return B_ERROR;
 
 	BMessage aReply;
@@ -373,11 +393,46 @@ QHaikuSystemTrayIcon::sendMessageToReplicant(BMessage *message)
 	return aErr;
 }
 
+status_t
+QHaikuSystemTrayIcon::replicantStatus(void)
+{
+	if (replicantId < 0)
+		return B_BAD_INDEX;
+	BMessage request(B_GET_PROPERTY), reply, archive;
+	BMessage specifier(B_ID_SPECIFIER);
+	specifier.AddInt32("id", replicantId);
+	specifier.AddString("property", "Replicant");
+	request.AddSpecifier(&specifier);
+	status_t status = getShelfMessenger().SendMessage(&request, &reply, 500000, 500000);
+	if (status != B_OK)
+		return status;
+	if (reply.FindInt32("error", &status) != B_OK)
+		return B_BAD_DATA;
+	if (status != B_OK)
+		return status;
+	if (reply.FindMessage("result", &archive) != B_OK)
+		return B_BAD_DATA;
+	const void* data = NULL;
+	ssize_t size = 0;
+	// IDs may be reused after Deskbar restarts. Never adopt or remove an
+	// unrelated application's tray item that now has the same ID.
+	if (archive.FindData("team", B_ANY_TYPE, &data, &size) != B_OK
+		|| size != sizeof(team_id))
+		return B_BAD_INDEX;
+	team_id owner;
+	memcpy(&owner, data, sizeof(owner));
+	return owner == getpid() ? B_OK : B_BAD_INDEX;
+}
+
 void
 QHaikuSystemTrayIcon::installIcon(void)
 {
-	if (replicantId <= 0)
+	if (looper == NULL)
+		return;
+	if (replicantId < 0)
 		replicantId = deskBarLoadIcon();
+	if (replicantId < 0)
+		return;
 
 	QString appName = QFileInfo(QCoreApplication::applicationFilePath()).fileName();
 	BString app_name(appName.toUtf8().constData());
