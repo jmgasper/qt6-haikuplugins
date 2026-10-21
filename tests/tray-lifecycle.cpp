@@ -10,9 +10,10 @@
 #include <Message.h>
 #include <Messenger.h>
 #include <OS.h>
+#include <unistd.h>
 #include <cstdio>
 
-int ownedItems(bool dropHeartbeats = false)
+int ownedItems(bool dropHeartbeats = false, int32* lastID = nullptr)
 {
     BMessenger deskbar("application/x-vnd.Be-TSKB");
     BMessage count(B_COUNT_PROPERTIES), reply;
@@ -39,6 +40,16 @@ int ownedItems(bool dropHeartbeats = false)
             && archive.FindData("team", B_ANY_TYPE, &data, &size) == B_OK
             && size == sizeof(team_id) && *(const team_id*)data == getpid()) {
             ++owned;
+            if (lastID) {
+                BMessage idQuery(B_GET_PROPERTY), idReply;
+                idQuery.AddSpecifier("ID");
+                idQuery.AddSpecifier("Replicant", i);
+                idQuery.AddSpecifier("Shelf");
+                idQuery.AddSpecifier("View", "Status");
+                idQuery.AddSpecifier("Window", "Deskbar");
+                if (deskbar.SendMessage(&idQuery, &idReply, 1000000, 1000000) == B_OK)
+                    idReply.FindInt32("result", lastID);
+            }
             if (dropHeartbeats) {
                 BMessage drop(B_SET_PROPERTY);
                 drop.AddInt32("what2", 'MSGR');
@@ -71,11 +82,17 @@ int main(int argc, char** argv)
     int ticks = 0;
     bool passed = true;
     bool dropHeartbeats = app.arguments().contains("--drop-heartbeats");
+    bool removeIcon = app.arguments().contains("--remove-icon");
     QObject::connect(&timer, &QTimer::timeout, [&] {
-        int count = ownedItems(dropHeartbeats);
+        int32 id = -1;
+        int count = ownedItems(dropHeartbeats, &id);
         std::printf("tick=%d team=%ld owned_tray_items=%d\n", ++ticks, (long)getpid(), count);
         std::fflush(stdout);
-        passed &= count == 1;
+        passed &= count == 1 || (removeIcon && ticks > 4 && ticks <= 12 && count == 0);
+        if (removeIcon && ticks == 4) {
+            BDeskbar deskbar;
+            passed &= id >= 0 && deskbar.RemoveItem(id) == B_OK;
+        }
         if (ticks == 20) {
             for (int cycle = 0; cycle < 10; ++cycle) {
                 tray.hide();
